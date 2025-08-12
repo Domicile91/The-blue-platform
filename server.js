@@ -152,6 +152,160 @@ app.get('/api/transactions', (req, res) => {
     });
 });
 
+// In-memory storage for balances and transactions (replace with database in production)
+let userBalances = {
+    'site_earnings': 3014.05,
+    'demo-001': 10000,
+    'main_system': 15420.75
+};
+
+let withdrawalTransactions = [];
+
+// POST /api/transactions/withdraw - Process withdrawal requests
+app.post('/api/transactions/withdraw', (req, res) => {
+    try {
+        const { accountId, amount, method, mobile, provider } = req.body;
+        
+        console.log('🏦 Processing withdrawal:', { accountId, amount, method, mobile, provider });
+        
+        // Validate required fields
+        if (!accountId || !amount || !method) {
+            return res.status(400).json({
+                success: false,
+                message: 'Missing required fields: accountId, amount, method'
+            });
+        }
+
+        const withdrawalAmount = parseFloat(amount);
+        
+        // Validate amount
+        if (withdrawalAmount <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Withdrawal amount must be greater than 0'
+            });
+        }
+
+        // Check minimum withdrawal
+        const minAmount = 10;
+        if (withdrawalAmount < minAmount) {
+            return res.status(400).json({
+                success: false,
+                message: `Minimum withdrawal amount is $${minAmount}`
+            });
+        }
+
+        // Get current balance
+        const currentBalance = userBalances[accountId] || 0;
+        
+        // Check sufficient balance
+        if (currentBalance < withdrawalAmount) {
+            return res.status(400).json({
+                success: false,
+                message: 'Insufficient balance for withdrawal'
+            });
+        }
+
+        // Create withdrawal transaction
+        const transaction = {
+            id: 'wd-' + Date.now(),
+            accountId: accountId,
+            type: 'withdrawal',
+            amount: withdrawalAmount,
+            method: method,
+            mobile: mobile,
+            provider: provider,
+            status: 'processing',
+            createdAt: new Date().toISOString(),
+            reference: 'WD' + Date.now().toString().slice(-8)
+        };
+
+        // Store transaction
+        withdrawalTransactions.push(transaction);
+
+        // Deduct balance immediately (for live system)
+        userBalances[accountId] = currentBalance - withdrawalAmount;
+
+        console.log('✅ Balance updated:', {
+            account: accountId,
+            oldBalance: currentBalance,
+            newBalance: userBalances[accountId],
+            withdrawn: withdrawalAmount
+        });
+
+        // For mobile money, simulate processing
+        if (method === 'mobile_money' && mobile) {
+            // Simulate processing time
+            setTimeout(() => {
+                const txIndex = withdrawalTransactions.findIndex(tx => tx.id === transaction.id);
+                if (txIndex !== -1) {
+                    withdrawalTransactions[txIndex].status = 'completed';
+                    withdrawalTransactions[txIndex].completedAt = new Date().toISOString();
+                    console.log('📱 Mobile money withdrawal completed:', transaction.id);
+                }
+            }, 3000); // Complete after 3 seconds
+
+            transaction.status = 'completed'; // Immediately mark as completed for demo
+        }
+
+        res.json({
+            success: true,
+            message: 'Withdrawal processed successfully',
+            transaction: transaction,
+            newBalance: userBalances[accountId]
+        });
+
+    } catch (error) {
+        console.error('❌ Withdrawal error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
+});
+
+// GET /api/accounts/:id/balance - Get account balance
+app.get('/api/accounts/:id/balance', (req, res) => {
+    const { id } = req.params;
+    const balance = userBalances[id] || 0;
+    
+    res.json({
+        success: true,
+        accountId: id,
+        balance: balance,
+        currency: 'USD'
+    });
+});
+
+// GET /api/transactions/withdrawals - Get withdrawal history
+app.get('/api/transactions/withdrawals', (req, res) => {
+    res.json({
+        success: true,
+        transactions: withdrawalTransactions
+    });
+});
+
+// POST /api/accounts/update-balance - Update account balance (admin only)
+app.post('/api/accounts/update-balance', (req, res) => {
+    const { accountId, newBalance } = req.body;
+    
+    if (!accountId || newBalance === undefined) {
+        return res.status(400).json({
+            success: false,
+            message: 'AccountId and newBalance required'
+        });
+    }
+
+    userBalances[accountId] = parseFloat(newBalance);
+    
+    res.json({
+        success: true,
+        message: 'Balance updated successfully',
+        accountId: accountId,
+        newBalance: userBalances[accountId]
+    });
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
     console.error('Error:', err.stack);
