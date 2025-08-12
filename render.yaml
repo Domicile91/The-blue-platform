@@ -1,0 +1,32 @@
+services:
+  # Backend API Service
+  - type: web
+    name: blue-traders-api
+    env: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: JWT_SECRET
+        generateValue: true
+      - key: FRONTEND_URL
+        value: https://thebluetraders.onrender.com
+    
+  # Static Frontend Service (if needed)
+  - type: static
+    name: blue-traders-frontend
+    buildCommand: echo "No build required for static frontend"
+    staticPublishPath: ./
+    routes:
+      - type: rewrite
+        source: /api/*
+        destination: https://blue-traders-api.onrender.com/api/*
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: public, max-age=86400
